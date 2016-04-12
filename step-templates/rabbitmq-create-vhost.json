@@ -1,0 +1,64 @@
+{
+  "Id": "ActionTemplates-81",
+  "Name": "Create RabbitMQ Virtual Host",
+  "Description": "Creates a virtual host on an existing RabbitMQ server if the virtual host doesn't already exist.\nAdds read, write and configure permissions for a given user if necessary.",
+  "ActionType": "Octopus.Script",
+  "Version": 10,
+  "Properties": {
+    "Octopus.Action.Script.Syntax": "PowerShell",
+    "Octopus.Action.Script.ScriptBody": "function Invoke-RestMethodP2 (\n        $Uri,\n        $Method = \"GET\",\n        $Credential,\n        $Body\n    )\n{\n    $request = [System.Net.WebRequest]::Create($Uri)\n    $request.Method = $Method\n    $request.Credentials = $Credential\n    $request.ContentType = 'application/json'\n\n    if ($Method -eq \"POST\" -or $Method -eq \"PUT\")\n    {\n        $request.ContentType = 'application/json'\n        if ($Body)\n        {\n            try\n            {\n                $requestStream = $request.GetRequestStream()\n                $streamWriter = New-Object System.IO.StreamWriter($requestStream)\n                $streamWriter.Write($body)\n            }\n            finally\n            {\n                if ($null -ne $streamWriter) { $streamWriter.Dispose() }\n                if ($null -ne $requestStream) { $requestStream.Dispose() }\n            }\n        }\n    }\n\n    try\n    {\n       $response = $request.GetResponse()\n    }\n    catch [System.Net.WebException]\n    {\n        $response = $_.Exception.Response\n    }\n    \n    $httpStatus = [int]$response.StatusCode\n    Write-Verbose \"HTTP STATUS: $httpStatus\"\n    if ($httpStatus -eq 401)\n    {\n        Write-Error \"Authorization failed for user: $($Credential.UserName)\"\n    }\n    if ($httpStatus -ne 200)\n    {\n        return $null\n    }\n\n    $responseStream = new-object System.IO.StreamReader (($response).GetResponseStream())\n    $result = $responseStream.ReadToEnd()\n    $responseStream.Dispose()\n\n    [System.Reflection.Assembly]::LoadWithPartialName(\"System.Web.Extensions\")\n    $ser = New-Object System.Web.Script.Serialization.JavaScriptSerializer\n    $obj = $ser.DeserializeObject($result)\n\n    return $obj\n}\n\n$SecurePassword = ConvertTo-SecureString $AdminPassword -AsPlainText -Force\n$Cred = New-Object System.Management.Automation.PSCredential ($AdminUsername, $SecurePassword)\n$vhostUri = \"$Url/api/vhosts/$VirtualHost\"\n$vhostPermissionUri = \"$Url/api/permissions/$VirtualHost/$Username\"\n\nWrite-Output \"Create virtual host: $VirtualHost\"\nWrite-Verbose \"Checking if vhost exists: GET $vhostUri\"\n$vhostExists = Invoke-RestMethodP2 -Uri $vhostUri -Credential $Cred\n\nif (!$vhostExists)\n{\n    Write-Verbose \"Creating vhost: PUT $vhostUri\"\n    Invoke-RestMethodP2 -Uri $vhostUri -Credential $Cred -Method \"PUT\"\n}\nWrite-Output \"Done!\"\n\nWrite-Output \"Grant permissions to virtual host\"\nWrite-Verbose \"Checking if vhost permissions exists: GET $vhostPermissionUri\"\n$vhostPermissionsExist = Invoke-RestMethodP2 -Uri $vhostPermissionUri -Credential $Cred\nif (!$vhostPermissionsExist)\n{\n    Write-Verbose \"Creating vhost permissions: PUT $vhostPermissionUri\"\n    $body = \"{\"\"configure\"\":\"\".*\"\",\"\"write\"\":\"\".*\"\",\"\"read\"\":\"\".*\"\"}\"\n    Invoke-RestMethodP2 -Uri $vhostPermissionUri -Credential $Cred -Method \"PUT\" -Body $body\n}\nWrite-Output \"Done!\"\n"
+  },
+  "SensitiveProperties": {},
+  "Parameters": [
+    {
+      "Name": "Url",
+      "Label": "RabbitMQ URL",
+      "HelpText": "The RabbitMQ URL, i.e. http://localhost:15672\n\nNote: No trailing slash",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AdminUsername",
+      "Label": "Admin username",
+      "HelpText": "RabbitMQ administrator username",
+      "DefaultValue": "admin",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "AdminPassword",
+      "Label": "Admin password",
+      "HelpText": "RabbitMQ administrator password",
+      "DefaultValue": "admin",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "VirtualHost",
+      "Label": "Virtual host",
+      "HelpText": "The virtual host to create",
+      "DefaultValue": null,
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    },
+    {
+      "Name": "Username",
+      "Label": "Virtual host user",
+      "HelpText": "The user that will be given permissions to the created virtual host",
+      "DefaultValue": "guest",
+      "DisplaySettings": {
+        "Octopus.ControlType": "SingleLineText"
+      }
+    }
+  ],
+  "$Meta": {
+    "ExportedAt": "2016-04-12T08:06:36.307Z",
+    "OctopusVersion": "3.2.9",
+    "Type": "ActionTemplate"
+  }
+}
